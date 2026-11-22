@@ -1,0 +1,92 @@
+function doGet() {
+  const template = HtmlService.createTemplateFromFile('index');
+  return template.evaluate()
+    .setTitle('Spesa Smart SOCIO')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+function getMySheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return ss.getSheetByName('Foglio1') || ss.getSheets()[0];
+}
+
+
+function getData() {
+  const sheet = getMySheet();
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return { items: [], allNames: [] };
+ 
+  const rows = data.slice(1);
+ 
+  // Lista dei prodotti che vuoi comprare oggi (Colonna B = TRUE)
+  const items = rows.map(r => ({
+    prodotto: (r[0] || "").toString().trim(),
+    daComprare: r[1] === true,
+    preso: r[2] === true,
+    categoria: r[6] || "DA CLASSIFICARE" // Colonna G
+  })).filter(i => i.daComprare);
+
+
+  // MEMORIA STORICA: Prende TUTTI i nomi mai inseriti per l'intuizione
+  const allNames = [...new Set(rows.map(r => (r[0] || "").toString().trim()).filter(String))].sort();
+
+
+  return { items, allNames };
+}
+
+
+function addProduct(name) {
+  const sheet = getMySheet();
+  const data = sheet.getDataRange().getValues();
+  const cleanName = name.toString().trim();
+  let found = false;
+
+
+  // Cerca se esiste già nel database (anche se non è in lista oggi)
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim().toLowerCase() === cleanName.toLowerCase()) {
+      sheet.getRange(i + 1, 2).setValue(true);  // Lo rimette in lista
+      sheet.getRange(i + 1, 3).setValue(false); // Lo segna come "non ancora preso"
+      found = true;
+      break;
+    }
+  }
+
+
+  // SE NON ESISTE, LO AGGIUNGE PER SEMPRE ALLA LISTA GENERALE
+  if (!found) {
+    // A=Nome, B=In lista, C=Preso, ..., G=Reparto
+    sheet.appendRow([cleanName, true, false, "", "", "", "NUOVO"]);
+  }
+  return getData();
+}
+
+
+function toggleBought(name, status) {
+  const sheet = getMySheet();
+  const data = sheet.getDataRange().getValues();
+  const cleanName = name.toString().trim().toLowerCase();
+
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString().trim().toLowerCase() === cleanName) {
+      sheet.getRange(i + 1, 3).setValue(status);
+      break;
+    }
+  }
+}
+
+
+function resetAll() {
+  const sheet = getMySheet();
+  const data = sheet.getDataRange().getValues();
+ 
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][2] === true) { // Se è stato preso
+      sheet.getRange(i + 1, 2).setValue(false); // Scompare dal telefono
+      sheet.getRange(i + 1, 3).setValue(false); // Si resetta la spunta nel database
+      
+    }
+  }
+  return getData();
+}
