@@ -1,92 +1,94 @@
-function doGet() {
-  const template = HtmlService.createTemplateFromFile('index');
-  return template.evaluate()
-    .setTitle('Spesa Smart SOCIO')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-function getMySheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName('Foglio1') || ss.getSheets()[0];
-}
-
-
-function getData() {
-  const sheet = getMySheet();
-  const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return { items: [], allNames: [] };
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    :root { --p: #27ae60; --s: #3498db; --r: #e74c3c; --bg: #f4f7f6; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 15px; }
+    .header { text-align: center; margin-bottom: 15px; }
+    .add-box { display: flex; gap: 8px; margin-bottom: 20px; }
+    input[type="text"] { flex: 1; padding: 15px; border: 2px solid #ddd; border-radius: 12px; font-size: 16px; outline: none; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
+    .btn-add { background: var(--p); color: white; border: none; padding: 0 25px; border-radius: 12px; font-weight: bold; font-size: 26px; }
+    .item-card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 15px; display: flex; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .info { flex: 1; }
+    .name { font-size: 1.1rem; font-weight: 600; color: #333; }
+    .cat { font-size: 0.7rem; color: #bbb; text-transform: uppercase; display: block; margin-top: 2px; }
+    input[type="checkbox"] { width: 32px; height: 32px; margin-right: 15px; accent-color: var(--p); }
+    .bought { background: #f1f8f1; opacity: 0.7; border: 1px solid #d0e7d0; }
+    .bought .name { text-decoration: line-through; color: #777; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; position: sticky; bottom: 15px; }
+    .btn { padding: 16px; border: none; border-radius: 12px; font-weight: bold; color: white; font-size: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .btn-blue { background: var(--s); }
+    .btn-red { background: var(--r); }
+    .loading { text-align: center; padding: 40px; color: #888; font-style: italic; }
+  </style>
+  <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-512.png">
+</head>
+<body>
+  <div class="header"><h2>🛒 SUPERMERCATO FAMILY</h2></div>
  
-  const rows = data.slice(1);
- 
-  // Lista dei prodotti che vuoi comprare oggi (Colonna B = TRUE)
-  const items = rows.map(r => ({
-    prodotto: (r[0] || "").toString().trim(),
-    daComprare: r[1] === true,
-    preso: r[2] === true,
-    categoria: r[6] || "DA CLASSIFICARE" // Colonna G
-  })).filter(i => i.daComprare);
+  <div class="add-box">
+    <input type="text" id="newProd" list="suggestions" placeholder="Scrivi prodotto..." autocomplete="off">
+    <datalist id="suggestions"></datalist>
+    <button class="btn-add" onclick="addNew()">+</button>
+  </div>
 
 
-  // MEMORIA STORICA: Prende TUTTI i nomi mai inseriti per l'intuizione
-  const allNames = [...new Set(rows.map(r => (r[0] || "").toString().trim()).filter(String))].sort();
+  <div id="content"><div class="loading">Sincronizzazione database...</div></div>
 
 
-  return { items, allNames };
-}
+  <div class="actions">
+    <button class="btn btn-blue" onclick="load()">🔄 AGGIORNA</button>
+    <button class="btn btn-red" onclick="resetList()">🧹 FINE SPESA</button>
+  </div>
 
 
-function addProduct(name) {
-  const sheet = getMySheet();
-  const data = sheet.getDataRange().getValues();
-  const cleanName = name.toString().trim();
-  let found = false;
-
-
-  // Cerca se esiste già nel database (anche se non è in lista oggi)
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0].toString().trim().toLowerCase() === cleanName.toLowerCase()) {
-      sheet.getRange(i + 1, 2).setValue(true);  // Lo rimette in lista
-      sheet.getRange(i + 1, 3).setValue(false); // Lo segna come "non ancora preso"
-      found = true;
-      break;
+  <script>
+    window.onload = load;
+    function load() {
+      google.script.run.withSuccessHandler(draw).getData();
     }
-  }
-
-
-  // SE NON ESISTE, LO AGGIUNGE PER SEMPRE ALLA LISTA GENERALE
-  if (!found) {
-    // A=Nome, B=In lista, C=Preso, ..., G=Reparto
-    sheet.appendRow([cleanName, true, false, "", "", "", "NUOVO"]);
-  }
-  return getData();
-}
-
-
-function toggleBought(name, status) {
-  const sheet = getMySheet();
-  const data = sheet.getDataRange().getValues();
-  const cleanName = name.toString().trim().toLowerCase();
-
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0].toString().trim().toLowerCase() === cleanName) {
-      sheet.getRange(i + 1, 3).setValue(status);
-      break;
+    function draw(res) {
+      const container = document.getElementById('content');
+      // Qui carichiamo i suggerimenti per la prossima volta
+      document.getElementById('suggestions').innerHTML = res.allNames.map(n => `<option value="${n}">`).join('');
+     
+      container.innerHTML = '';
+      if(res.items.length === 0) {
+        container.innerHTML = '<div class="loading">Nessun prodotto in lista.</div>';
+        return;
+      }
+      res.items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'item-card' + (item.preso ? ' bought' : '');
+        div.innerHTML = `
+          <input type="checkbox" ${item.preso?'checked':''} onchange="toggle('${item.prodotto.replace(/'/g, "\\'")}', this.checked, this)">
+          <div class="info">
+            <span class="name">${item.prodotto}</span>
+            <span class="cat">${item.categoria}</span>
+          </div>
+        `;
+        container.appendChild(div);
+      });
     }
-  }
-}
-
-
-function resetAll() {
-  const sheet = getMySheet();
-  const data = sheet.getDataRange().getValues();
- 
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][2] === true) { // Se è stato preso
-      sheet.getRange(i + 1, 2).setValue(false); // Scompare dal telefono
-      sheet.getRange(i + 1, 3).setValue(false); // Si resetta la spunta nel database
-      
+    function addNew() {
+      const inp = document.getElementById('newProd');
+      if (!inp.value.trim()) return;
+      google.script.run.withSuccessHandler(draw).addProduct(inp.value.trim());
+      inp.value = '';
     }
-  }
-  return getData();
-}
+    function toggle(name, status, el) {
+      el.closest('.item-card').classList.toggle('bought');
+      google.script.run.toggleBought(name, status);
+    }
+    function resetList() {
+      if (confirm("Archivio i prodotti presi?")) {
+        document.getElementById('content').innerHTML = '<div class="loading">Archiviazione...</div>';
+        google.script.run.withSuccessHandler(draw).resetAll();
+      }
+    }
+  </script>
+</body>
+</html>
+
