@@ -1,94 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Supermercato">
+  <meta name="theme-color" content="#f5b800">
+  <title>Spesa Smart SOCIO</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-512.png">
   <style>
     :root { --p: #27ae60; --s: #3498db; --r: #e74c3c; --bg: #f4f7f6; }
-    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 15px; }
+    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 15px; padding-bottom: 90px; }
     .header { text-align: center; margin-bottom: 15px; }
+    .header h2 { margin: 5px 0; color: #222; }
     .add-box { display: flex; gap: 8px; margin-bottom: 20px; }
     input[type="text"] { flex: 1; padding: 15px; border: 2px solid #ddd; border-radius: 12px; font-size: 16px; outline: none; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
-    .btn-add { background: var(--p); color: white; border: none; padding: 0 25px; border-radius: 12px; font-weight: bold; font-size: 26px; }
+    input[type="text"]:focus { border-color: var(--p); }
+    .btn-add { background: var(--p); color: white; border: none; padding: 0 25px; border-radius: 12px; font-weight: bold; font-size: 26px; cursor: pointer; }
     .item-card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 15px; display: flex; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     .info { flex: 1; }
     .name { font-size: 1.1rem; font-weight: 600; color: #333; }
-    .cat { font-size: 0.7rem; color: #bbb; text-transform: uppercase; display: block; margin-top: 2px; }
+    .cat { font-size: 0.72rem; color: #888; text-transform: uppercase; display: block; margin-top: 2px; font-weight: 600; }
     input[type="checkbox"] { width: 32px; height: 32px; margin-right: 15px; accent-color: var(--p); }
     .bought { background: #f1f8f1; opacity: 0.7; border: 1px solid #d0e7d0; }
     .bought .name { text-decoration: line-through; color: #777; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; position: sticky; bottom: 15px; }
-    .btn { padding: 16px; border: none; border-radius: 12px; font-weight: bold; color: white; font-size: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; position: fixed; bottom: 15px; left: 15px; right: 15px; }
+    .btn { padding: 16px; border: none; border-radius: 12px; font-weight: bold; color: white; font-size: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); cursor: pointer; }
     .btn-blue { background: var(--s); }
     .btn-red { background: var(--r); }
     .loading { text-align: center; padding: 40px; color: #888; font-style: italic; }
   </style>
-  <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-512.png">
 </head>
 <body>
   <div class="header"><h2>🛒 SUPERMERCATO FAMILY</h2></div>
- 
+
   <div class="add-box">
     <input type="text" id="newProd" list="suggestions" placeholder="Scrivi prodotto..." autocomplete="off">
     <datalist id="suggestions"></datalist>
     <button class="btn-add" onclick="addNew()">+</button>
   </div>
 
-
   <div id="content"><div class="loading">Sincronizzazione database...</div></div>
-
 
   <div class="actions">
     <button class="btn btn-blue" onclick="load()">🔄 AGGIORNA</button>
     <button class="btn btn-red" onclick="resetList()">🧹 FINE SPESA</button>
   </div>
 
-
   <script>
-    window.onload = load;
-    function load() {
-      google.script.run.withSuccessHandler(draw).getData();
+    // INCOLLA QUI SOTTO L'URL /exec DELLA TUA WEB APP GOOGLE APPS SCRIPT
+    const SCRIPT_URL = "INCOLLA_QUI_IL_TUO_URL_WEB_APP";
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
+
+    window.onload = load;
+
+    document.getElementById('newProd').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') addNew();
+    });
+
+    async function callApi(payload) {
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    }
+
+    async function load() {
+      try {
+        document.getElementById('content').innerHTML = '<div class="loading">Sincronizzazione database...</div>';
+        const data = await callApi({ action: 'getData' });
+        draw(data);
+      } catch (e) {
+        document.getElementById('content').innerHTML = '<div class="loading">Errore di connessione. Controlla rete o URL Script.</div>';
+      }
+    }
+
     function draw(res) {
       const container = document.getElementById('content');
-      // Qui carichiamo i suggerimenti per la prossima volta
-      document.getElementById('suggestions').innerHTML = res.allNames.map(n => `<option value="${n}">`).join('');
-     
+      document.getElementById('suggestions').innerHTML = (res.allNames || [])
+        .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`)
+        .join('');
+
       container.innerHTML = '';
-      if(res.items.length === 0) {
+      if (!res.items || res.items.length === 0) {
         container.innerHTML = '<div class="loading">Nessun prodotto in lista.</div>';
         return;
       }
+
       res.items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'item-card' + (item.preso ? ' bought' : '');
-        div.innerHTML = `
-          <input type="checkbox" ${item.preso?'checked':''} onchange="toggle('${item.prodotto.replace(/'/g, "\\'")}', this.checked, this)">
-          <div class="info">
-            <span class="name">${item.prodotto}</span>
-            <span class="cat">${item.categoria}</span>
-          </div>
-        `;
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = item.preso;
+        cb.onchange = function() {
+          div.classList.toggle('bought', cb.checked);
+          callApi({ action: 'toggleBought', name: item.prodotto, status: cb.checked });
+        };
+
+        const info = document.createElement('div');
+        info.className = 'info';
+        info.innerHTML = `<span class="name">${item.prodotto}</span><span class="cat">${item.categoria}</span>`;
+
+        div.appendChild(cb);
+        div.appendChild(info);
         container.appendChild(div);
       });
     }
-    function addNew() {
+
+    async function addNew() {
       const inp = document.getElementById('newProd');
-      if (!inp.value.trim()) return;
-      google.script.run.withSuccessHandler(draw).addProduct(inp.value.trim());
+      const val = inp.value.trim();
+      if (!val) return;
       inp.value = '';
+      document.getElementById('content').innerHTML = '<div class="loading">Aggiunta in corso...</div>';
+      const data = await callApi({ action: 'addProduct', name: val });
+      draw(data);
     }
-    function toggle(name, status, el) {
-      el.closest('.item-card').classList.toggle('bought');
-      google.script.run.toggleBought(name, status);
-    }
-    function resetList() {
+
+    async function resetList() {
       if (confirm("Archivio i prodotti presi?")) {
         document.getElementById('content').innerHTML = '<div class="loading">Archiviazione...</div>';
-        google.script.run.withSuccessHandler(draw).resetAll();
+        const data = await callApi({ action: 'resetAll' });
+        draw(data);
       }
     }
   </script>
 </body>
 </html>
-
